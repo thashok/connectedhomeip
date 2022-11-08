@@ -30,6 +30,7 @@
 #endif // QR_CODE_ENABLED
 
 #include "sl_board_control.h"
+#include "sl_spidrv_instances.h"
 
 #define LCD_SIZE 128
 #define QR_CODE_VERSION 4
@@ -68,6 +69,11 @@ CHIP_ERROR SilabsLCD::Init(uint8_t * name, bool initialState)
         err = CHIP_ERROR_INTERNAL;
     }
 
+	/*Setting of LCD baudrate flag */
+	if(baudrate_set_t == BAUDRATE_SET_EXP_HDR)
+	{
+		baudrate_set_t = BAUDRATE_SET_LCD;
+	}
     /* Initialize the DMD module for the DISPLAY device driver. */
     status = DMD_init(0);
     if (DMD_OK != status)
@@ -117,7 +123,9 @@ int SilabsLCD::DrawPixel(void * pContext, int32_t x, int32_t y)
 
 int SilabsLCD::Update(void)
 {
-    return DMD_updateDisplay();
+    int status;
+    status = LCD_baudrate_set();
+    return status;
 }
 
 void SilabsLCD::WriteDemoUI(bool state)
@@ -169,7 +177,7 @@ void SilabsLCD::WriteQRCode()
         }
     }
 
-    DMD_updateDisplay();
+    LCD_baudrate_set();
 }
 
 void SilabsLCD::SetQRCode(uint8_t * str, uint32_t size)

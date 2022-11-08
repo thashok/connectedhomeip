@@ -43,6 +43,7 @@
 #include "gpiointerrupt.h"
 
 #include "sl_spidrv_exp_config.h"
+#include "sl_spidrv_instances.h"
 #include "sl_wfx_board.h"
 #include "sl_wfx_host.h"
 #include "sl_wfx_task.h"
@@ -68,6 +69,8 @@ uint8_t wirq_irq_nb = SL_WFX_HOST_PINOUT_SPI_IRQ;
 uint8_t wirq_irq_nb = SL_WFX_HOST_PINOUT_SPI_WIRQ_PIN; // SL_WFX_HOST_PINOUT_SPI_WIRQ_PIN;
 #endif
 
+enum BAUDRATE_SET baudrate_set_t = BAUDRATE_SET_EXP_HDR;
+
 #define PIN_OUT_SET 1
 #define PIN_OUT_CLEAR 0
 
@@ -91,7 +94,6 @@ sl_status_t sl_wfx_host_init_bus(void)
      * not controlled by EUSART so there is no write to the corresponding
      * EUSARTROUTE register to do this.
      */
-    MY_USART->CTRL |= (1u << _USART_CTRL_SMSDELAY_SHIFT);
 
 #if defined(EFR32MG12)
     MY_USART->ROUTEPEN = USART_ROUTEPEN_TXPEN | USART_ROUTEPEN_RXPEN | USART_ROUTEPEN_CLKPEN;
@@ -238,9 +240,13 @@ sl_status_t sl_wfx_host_spi_transfer_no_cs_assert(sl_wfx_host_bus_transfer_type_
     sl_status_t result = SL_STATUS_FAIL;
     const bool is_read = (type == SL_WFX_BUS_READ);
 
-    while (!(MY_USART->STATUS & USART_STATUS_TXBL))
+    if (baudrate_set_t == BAUDRATE_SET_LCD)
     {
+        SPI_baudrate_set(EXP_HDR_BIT_RATE);
+        baudrate_set_t = BAUDRATE_SET_EXP_HDR;
     }
+    while (!(MY_USART->STATUS & USART_STATUS_TXBL))
+    {}
     MY_USART->CMD = USART_CMD_CLEARRX | USART_CMD_CLEARTX;
 
     /* header length should be greater than 0 */
@@ -248,15 +254,13 @@ sl_status_t sl_wfx_host_spi_transfer_no_cs_assert(sl_wfx_host_bus_transfer_type_
     {
         for (uint8_t * buffer_ptr = header; header_length > 0; --header_length, ++buffer_ptr)
         {
-            MY_USART->TXDATA = (uint32_t)(*buffer_ptr);
+            MY_USART->TXDATA = (uint32_t) (*buffer_ptr);
 
             while (!(MY_USART->STATUS & USART_STATUS_TXC))
-            {
-            }
+            {}
         }
         while (!(MY_USART->STATUS & USART_STATUS_TXBL))
-        {
-        }
+        {}
     }
 
     /* buffer length should be greater than 0 */
@@ -403,6 +407,9 @@ void sl_wfx_host_gpio_init(void)
     // Enable GPIO clock.
     CMU_ClockEnable(cmuClock_GPIO, true);
 
+    // configure WF200 CS pin.
+    GPIO_PinModeSet(SL_SPIDRV_EXP_CS_PORT, SL_SPIDRV_EXP_CS_PIN, gpioModePushPull, 1);
+
     // Configure WF200 reset pin.
     GPIO_PinModeSet(SL_WFX_HOST_PINOUT_RESET_PORT, SL_WFX_HOST_PINOUT_RESET_PIN, gpioModePushPull, 0);
     // Configure WF200 WUP pin.
@@ -423,4 +430,18 @@ void sl_wfx_host_gpio_init(void)
     NVIC_ClearPendingIRQ(1 << wirq_irq_nb);
     NVIC_SetPriority(GPIO_EVEN_IRQn, 5);
     NVIC_SetPriority(GPIO_ODD_IRQn, 5);
+}
+
+void SPI_baudrate_set(uint32_t baudrate)
+{
+    // USART is used in MG24 + WF200 combination
+    USART_InitSync_TypeDef usartInit = USART_INITSYNC_DEFAULT;
+    usartInit.msbf                   = true;
+    usartInit.clockMode              = usartClockMode0;
+    usartInit.baudrate               = baudrate;
+    uint32_t databits                = SL_SPIDRV_EXP_FRAME_LENGTH - 4U + _USART_FRAME_DATABITS_FOUR;
+    usartInit.databits               = (USART_Databits_TypeDef) databits;
+    usartInit.autoCsEnable           = true;
+
+    USART_InitSync(USART0, &usartInit);
 }

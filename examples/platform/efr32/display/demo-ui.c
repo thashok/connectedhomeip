@@ -23,6 +23,7 @@
 #include "dmd/dmd.h"
 #include "em_types.h"
 #include "glib.h"
+#include "sl_spidrv_instances.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -105,14 +106,14 @@ void demoUIDisplayHeader(char * name)
     {
         GLIB_drawStringOnLine(&glibContext, name, 5, GLIB_ALIGN_CENTER, 0, 0, true);
     }
-    DMD_updateDisplay();
+    LCD_baudrate_set();
 }
 
 void demoUIDisplayApp(bool on)
 {
     GLIB_drawBitmap(&glibContext, APP_X_POSITION, APP_Y_POSITION, APP_BITMAP_WIDTH, APP_BITMAP_HEIGHT,
                     (on ? OnStateBitMap : OffStateBitMap));
-    DMD_updateDisplay();
+    LCD_baudrate_set();
 }
 
 void demoUIDisplayProtocol(demoUIProtocol protocol, bool isConnected)
@@ -123,7 +124,7 @@ void demoUIDisplayProtocol(demoUIProtocol protocol, bool isConnected)
                     (protocol == DEMO_UI_PROTOCOL1 ? PROT1_BITMAP_HEIGHT : PROT2_BITMAP_HEIGHT),
                     (protocol == DEMO_UI_PROTOCOL1 ? (isConnected ? PROT1_BITMAP_CONN : PROT1_BITMAP)
                                                    : (isConnected ? PROT2_BITMAP_CONN : PROT2_BITMAP)));
-    DMD_updateDisplay();
+    LCD_baudrate_set();
 }
 
 void demoUIClearMainScreen(uint8_t * name)
@@ -133,4 +134,17 @@ void demoUIClearMainScreen(uint8_t * name)
     demoUIDisplayApp(false);
     demoUIDisplayProtocol(DEMO_UI_PROTOCOL1, false);
     demoUIDisplayProtocol(DEMO_UI_PROTOCOL2, false);
+}
+
+int LCD_baudrate_set(void)
+{
+    int status;
+    /* For LCD contex use */;
+    if (baudrate_set_t == BAUDRATE_SET_EXP_HDR)
+    {
+        SPI_baudrate_set(LCD_BIT_RATE);
+        baudrate_set_t = BAUDRATE_SET_LCD;
+    }
+    status = DMD_updateDisplay();
+    return status;
 }
