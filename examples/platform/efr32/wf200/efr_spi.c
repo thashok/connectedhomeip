@@ -42,6 +42,7 @@
 
 #include "gpiointerrupt.h"
 
+#include "sl_mx25_flash_shutdown_usart_config.h"
 #include "sl_spidrv_exp_config.h"
 #include "sl_spidrv_instances.h"
 #include "sl_wfx_board.h"
@@ -140,6 +141,7 @@ sl_status_t sl_wfx_host_deinit_bus(void)
  *****************************************************************************/
 sl_status_t sl_wfx_host_spi_cs_assert()
 {
+    GPIO_PinOutSet(SL_MX25_FLASH_SHUTDOWN_CS_PORT, SL_MX25_FLASH_SHUTDOWN_CS_PIN);
     GPIO_PinOutClear(SL_SPIDRV_EXP_CS_PORT, SL_SPIDRV_EXP_CS_PIN);
     return SL_STATUS_OK;
 }
@@ -154,6 +156,7 @@ sl_status_t sl_wfx_host_spi_cs_assert()
 sl_status_t sl_wfx_host_spi_cs_deassert()
 {
     GPIO_PinOutSet(SL_SPIDRV_EXP_CS_PORT, SL_SPIDRV_EXP_CS_PIN);
+    GPIO_PinOutClear(SL_MX25_FLASH_SHUTDOWN_CS_PORT, SL_MX25_FLASH_SHUTDOWN_CS_PIN);
     return SL_STATUS_OK;
 }
 

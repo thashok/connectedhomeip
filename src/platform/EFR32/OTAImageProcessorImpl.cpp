@@ -23,6 +23,7 @@
 extern "C" {
 #include "platform/bootloader/api/btl_interface.h"
 #include "platform/emlib/inc/em_bus.h" // For CORE_CRITICAL_SECTION
+#include "sl_wfx_host_api.h" //CS control
 }
 
 #include "EFR32Config.h"
@@ -162,8 +163,9 @@ void OTAImageProcessorImpl::HandleFinalize(intptr_t context)
             writeBuffer[writeBufOffset] = 0;
             writeBufOffset++;
         }
-
+        sl_wfx_host_spi_cs_deassert();
         CORE_CRITICAL_SECTION(err = bootloader_eraseWriteStorage(mSlotId, mWriteOffset, writeBuffer, kAlignmentBytes);)
+        sl_wfx_host_spi_cs_assert();
         if (err)
         {
             ChipLogError(SoftwareUpdate, "ERROR: In HandleFinalize bootloader_eraseWriteStorage() error %ld", err);
@@ -242,19 +244,22 @@ void OTAImageProcessorImpl::HandleProcessBlock(intptr_t context)
         imageProcessor->mDownloader->EndDownload(CHIP_ERROR_INVALID_FILE_IDENTIFIER);
         return;
     }
-
     // Copy data into the word-aligned writeBuffer, once it fills write its contents to the bootloader storage
     // Final data block is handled in HandleFinalize().
     uint32_t blockReadOffset = 0;
+    ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()block.size() [%d]",block.size());
     while (blockReadOffset < block.size())
     {
         writeBuffer[writeBufOffset] = *((block.data()) + blockReadOffset);
         writeBufOffset++;
+        ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()writeBufOffset [%d]",writeBufOffset);
         blockReadOffset++;
+        ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()blockReadOffset [%ld]",blockReadOffset);
         if (writeBufOffset == kAlignmentBytes)
         {
             writeBufOffset = 0;
-
+            sl_wfx_host_spi_cs_deassert();
+            ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()mSlotId [%d]",mSlotId);
             CORE_CRITICAL_SECTION(err = bootloader_eraseWriteStorage(mSlotId, mWriteOffset, writeBuffer, kAlignmentBytes);)
             if (err)
             {
@@ -263,10 +268,12 @@ void OTAImageProcessorImpl::HandleProcessBlock(intptr_t context)
                 return;
             }
             mWriteOffset += kAlignmentBytes;
+            ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()mWriteOffset [%ld]",mWriteOffset);
             imageProcessor->mParams.downloadedBytes += kAlignmentBytes;
+            ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()downloadedBytes [%lld]",imageProcessor->mParams.downloadedBytes);
         }
     }
-
+    sl_wfx_host_spi_cs_assert();
     imageProcessor->mDownloader->FetchNextData();
 }
 
