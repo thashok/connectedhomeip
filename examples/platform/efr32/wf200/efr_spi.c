@@ -55,6 +55,10 @@ extern SPIDRV_Handle_t sl_spidrv_exp_handle;
 #define USART SL_WFX_HOST_PINOUT_SPI_PERIPHERAL
 
 StaticSemaphore_t xEfrSpiSemaBuffer;
+
+StaticSemaphore_t spi_sync;
+SemaphoreHandle_t spi_sync_hdl;
+
 static SemaphoreHandle_t spi_sem;
 
 static unsigned int tx_dma_channel;
@@ -108,6 +112,9 @@ sl_status_t sl_wfx_host_init_bus(void)
 
     spi_sem = xSemaphoreCreateBinaryStatic(&xEfrSpiSemaBuffer);
     xSemaphoreGive(spi_sem);
+
+    spi_sync_hdl = xSemaphoreCreateBinaryStatic(&spi_sync);
+    xSemaphoreGive(spi_sync_hdl);
 
     return SL_STATUS_OK;
 }
@@ -240,6 +247,10 @@ void transmitDMA(uint8_t * buffer, uint16_t buffer_length)
 sl_status_t sl_wfx_host_spi_transfer_no_cs_assert(sl_wfx_host_bus_transfer_type_t type, uint8_t * header, uint16_t header_length,
                                                   uint8_t * buffer, uint16_t buffer_length)
 {
+    if (xSemaphoreTake(spi_sync_hdl, portMAX_DELAY) != pdTRUE)
+    {
+        return SL_STATUS_TIMEOUT;
+    }
     sl_status_t result = SL_STATUS_FAIL;
     const bool is_read = (type == SL_WFX_BUS_READ);
 
@@ -293,7 +304,7 @@ sl_status_t sl_wfx_host_spi_transfer_no_cs_assert(sl_wfx_host_bus_transfer_type_
             result = SL_STATUS_TIMEOUT;
         }
     }
-
+    xSemaphoreGive(spi_sync_hdl);
     return result;
 }
 

@@ -24,6 +24,7 @@ extern "C" {
 #include "platform/bootloader/api/btl_interface.h"
 #include "platform/emlib/inc/em_bus.h" // For CORE_CRITICAL_SECTION
 #include "sl_wfx_host_api.h" //CS control
+extern SemaphoreHandle_t spi_sync_hdl;
 }
 
 #include "EFR32Config.h"
@@ -163,9 +164,14 @@ void OTAImageProcessorImpl::HandleFinalize(intptr_t context)
             writeBuffer[writeBufOffset] = 0;
             writeBufOffset++;
         }
+        if (xSemaphoreTake(spi_sync_hdl, portMAX_DELAY) != pdTRUE)
+        {
+            return ;
+        }
         sl_wfx_host_spi_cs_deassert();
         CORE_CRITICAL_SECTION(err = bootloader_eraseWriteStorage(mSlotId, mWriteOffset, writeBuffer, kAlignmentBytes);)
         sl_wfx_host_spi_cs_assert();
+        xSemaphoreGive(spi_sync_hdl);
         if (err)
         {
             ChipLogError(SoftwareUpdate, "ERROR: In HandleFinalize bootloader_eraseWriteStorage() error %ld", err);
@@ -187,16 +193,32 @@ void OTAImageProcessorImpl::HandleApply(intptr_t context)
 
     // Force KVS to store pending keys such as data from StoreCurrentUpdateInfo()
     chip::DeviceLayer::PersistedStorage::KeyValueStoreMgrImpl().ForceKeyMapSave();
-
+    #if 1
+        if (xSemaphoreTake(spi_sync_hdl, portMAX_DELAY) != pdTRUE)
+        {
+            return ;
+        }
+        sl_wfx_host_spi_cs_deassert();
+        #endif
     CORE_CRITICAL_SECTION(err = bootloader_verifyImage(mSlotId, NULL);)
+    ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleApply() bootloader_verifyImage");
+     // sl_wfx_host_spi_cs_assert();
+    //xSemaphoreGive(spi_sync_hdl);
     if (err != SL_BOOTLOADER_OK)
     {
         ChipLogError(SoftwareUpdate, "ERROR: bootloader_verifyImage() error %ld", err);
 
         return;
     }
-
+      //  if (xSemaphoreTake(spi_sync_hdl, portMAX_DELAY) != pdTRUE)
+      //  {
+           // return ;
+      //  }
+  //  sl_wfx_host_spi_cs_deassert();
     CORE_CRITICAL_SECTION(err = bootloader_setImageToBootload(mSlotId);)
+    ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleApply() bootloader_setImageToBootload");
+    sl_wfx_host_spi_cs_assert();
+    xSemaphoreGive(spi_sync_hdl);
     if (err != SL_BOOTLOADER_OK)
     {
         ChipLogError(SoftwareUpdate, "ERROR: bootloader_setImageToBootload() error %ld", err);
@@ -247,20 +269,24 @@ void OTAImageProcessorImpl::HandleProcessBlock(intptr_t context)
     // Copy data into the word-aligned writeBuffer, once it fills write its contents to the bootloader storage
     // Final data block is handled in HandleFinalize().
     uint32_t blockReadOffset = 0;
-    ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()block.size() [%d]",block.size());
     while (blockReadOffset < block.size())
     {
         writeBuffer[writeBufOffset] = *((block.data()) + blockReadOffset);
         writeBufOffset++;
-        ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()writeBufOffset [%d]",writeBufOffset);
         blockReadOffset++;
-        ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()blockReadOffset [%ld]",blockReadOffset);
         if (writeBufOffset == kAlignmentBytes)
         {
             writeBufOffset = 0;
+        if (xSemaphoreTake(spi_sync_hdl, portMAX_DELAY) != pdTRUE)
+        {
+            return ;
+        }
             sl_wfx_host_spi_cs_deassert();
-            ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()mSlotId [%d]",mSlotId);
+          // vTaskSuspendAll();
             CORE_CRITICAL_SECTION(err = bootloader_eraseWriteStorage(mSlotId, mWriteOffset, writeBuffer, kAlignmentBytes);)
+           // xTaskResumeAll();
+           sl_wfx_host_spi_cs_assert();
+           xSemaphoreGive(spi_sync_hdl);
             if (err)
             {
                 ChipLogError(SoftwareUpdate, "ERROR: In HandleProcessBlock bootloader_eraseWriteStorage() error %ld", err);
@@ -268,12 +294,9 @@ void OTAImageProcessorImpl::HandleProcessBlock(intptr_t context)
                 return;
             }
             mWriteOffset += kAlignmentBytes;
-            ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()mWriteOffset [%ld]",mWriteOffset);
             imageProcessor->mParams.downloadedBytes += kAlignmentBytes;
-            ChipLogProgress(SoftwareUpdate, "OTAImageProcessorImpl::HandleProcessBlock()downloadedBytes [%lld]",imageProcessor->mParams.downloadedBytes);
         }
     }
-    sl_wfx_host_spi_cs_assert();
     imageProcessor->mDownloader->FetchNextData();
 }
 
